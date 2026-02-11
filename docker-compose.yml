@@ -1,0 +1,71 @@
+# ── IBKR Iron Condor Bot — Docker Compose ─────────────────────────────────────
+# Stack: IB Gateway (paper/live) + Trading Bot + Dashboard
+#
+# Usage:
+#   docker compose up -d                 # Start everything
+#   docker compose logs -f bot           # Watch bot logs
+#   docker compose down                  # Stop everything
+# ──────────────────────────────────────────────────────────────────────────────
+version: "3.8"
+
+services:
+  # ── IB Gateway ─────────────────────────────────────────────────────────────
+  # Provides headless IBKR API connectivity
+  # GitHub: https://github.com/gnzsnz/ib-gateway-docker
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    container_name: ib-gateway
+    restart: unless-stopped
+    environment:
+      TWS_USERID: ${IB_USERNAME:-}
+      TWS_PASSWORD: ${IB_PASSWORD:-}
+      TRADING_MODE: ${TRADING_MODE:-paper}       # "paper" or "live"
+      TWS_ACCEPT_INCOMING: "accept"
+      READ_ONLY_API: "no"
+      VNC_SERVER_PASSWORD: ${VNC_PASSWORD:-demo}
+      TWS_PORT: "4003"
+    ports:
+      - "4001:4001"    # Live trading API
+      - "4002:4002"    # Paper trading API
+      - "4003:4003"    # Gateway admin
+      - "5900:5900"    # VNC (for debugging)
+    volumes:
+      - ib-gateway-data:/opt/ibgateway
+    networks:
+      - trading-net
+
+  # ── Trading Bot + Dashboard ────────────────────────────────────────────────
+  bot:
+    build: .
+    container_name: iron-condor-bot
+    restart: unless-stopped
+    depends_on:
+      - ib-gateway
+    environment:
+      BOT_ENV: ${BOT_ENV:-paper}
+      IB_HOST: ib-gateway
+      IB_PORT: ${IB_PORT:-4002}
+      IB_CLIENT_ID: 1
+      DASHBOARD_SECRET: ${DASHBOARD_SECRET:-change-me-in-production}
+      DB_PATH: /app/data/trades.db
+    ports:
+      - "5000:5000"    # Dashboard
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+    networks:
+      - trading-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  ib-gateway-data:
+  bot-data:
+  bot-logs:
+
+networks:
+  trading-net:
+    driver: bridge

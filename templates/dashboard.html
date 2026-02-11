@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🦅 Iron Condor Bot — Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #242836;
+            --border: #2e3348;
+            --text: #e0e4f0;
+            --muted: #8890a8;
+            --green: #00e676;
+            --red: #ff5252;
+            --blue: #448aff;
+            --orange: #ffab40;
+            --purple: #b388ff;
+            --cyan: #18ffff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; }
+        
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header h1 span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 8px; }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+        }
+        .status-running { background: rgba(0,230,118,0.15); color: var(--green); }
+        .status-stopped { background: rgba(255,82,82,0.15); color: var(--red); }
+        .status-paper { background: rgba(255,171,64,0.15); color: var(--orange); }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot-green { background: var(--green); animation: pulse 2s infinite; }
+        .dot-red { background: var(--red); }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        
+        .container { max-width: 1440px; margin: 0 auto; padding: 20px; }
+        
+        /* ── Tabs ─────────────────────────────────── */
+        .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--surface); border-radius: 8px; padding: 4px; }
+        .tab { padding: 10px 20px; border: none; background: transparent; color: var(--muted); cursor: pointer; border-radius: 6px; font-family: inherit; font-size: 13px; font-weight: 500; transition: 0.2s; }
+        .tab.active { background: var(--blue); color: white; }
+        .tab:hover:not(.active) { color: var(--text); background: var(--surface2); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* ── Cards ────────────────────────────────── */
+        .grid { display: grid; gap: 16px; }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-1-2 { grid-template-columns: 1fr 2fr; }
+        
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .card-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+        .card-value { font-size: 28px; font-weight: 700; }
+        .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+        
+        /* ── Tables ───────────────────────────────── */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 10px 12px; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+        td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        tr:hover { background: var(--surface2); }
+        .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .badge-open { background: rgba(68,138,255,0.15); color: var(--blue); }
+        .badge-closed { background: rgba(136,144,168,0.15); color: var(--muted); }
+        .badge-win { background: rgba(0,230,118,0.1); color: var(--green); }
+        .badge-loss { background: rgba(255,82,82,0.1); color: var(--red); }
+        
+        /* ── Chart ────────────────────────────────── */
+        .chart-container { position: relative; height: 300px; }
+        
+        /* ── Backtest Form ────────────────────────── */
+        .form-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-group input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; }
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 6px; font-family: inherit; font-size: 13px;
+            font-weight: 600; cursor: pointer; transition: 0.2s;
+        }
+        .btn-primary { background: var(--blue); color: white; }
+        .btn-primary:hover { filter: brightness(1.1); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* ── Stats Grid ───────────────────────────── */
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-item { background: var(--surface2); padding: 14px; border-radius: 8px; }
+        .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+        .stat-value { font-size: 20px; font-weight: 700; }
+        
+        /* ── Risk Events ──────────────────────────── */
+        .event-item { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+        .event-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+        .event-info { color: var(--blue); }
+        .event-warning { color: var(--orange); }
+        .event-error { color: var(--red); }
+        .event-time { font-size: 11px; color: var(--muted); }
+        .event-msg { font-size: 13px; }
+        
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--muted); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.6s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        @media (max-width: 768px) {
+            .grid-4, .grid-3, .grid-2, .grid-1-2 { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <!-- ── Header ─────────────────────────────────────────────────────── -->
+    <div class="header">
+        <h1>🦅 Iron Condor Bot <span>SPY Options</span></h1>
+        <div style="display:flex;gap:12px;align-items:center;">
+            <span class="status-badge status-paper" id="envBadge">
+                <span class="dot dot-green"></span>
+                <span id="envText">PAPER</span>
+            </span>
+            <span class="status-badge" id="statusBadge">
+                <span class="dot" id="statusDot"></span>
+                <span id="statusText">Loading...</span>
+            </span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- ── Tabs ────────────────────────────────────────────────────── -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('overview')">📊 Overview</button>
+            <button class="tab" onclick="switchTab('positions')">📋 Positions</button>
+            <button class="tab" onclick="switchTab('history')">📜 History</button>
+            <button class="tab" onclick="switchTab('backtest')">🧪 Backtest</button>
+            <button class="tab" onclick="switchTab('settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!-- ── TAB: Overview ──────────────────────────────────────────── -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div class="tab-content active" id="tab-overview">
+            <!-- Summary Cards -->
+            <div class="grid grid-4" style="margin-bottom:20px;">
+                <div class="card">
+                    <div class="card-title">Today's P&L</div>
+                    <div class="card-value" id="todayPnl">$0.00</div>
+                    <div class="card-sub" id="todayTrades">0 trades today</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Open Positions</div>
+                    <div class="card-value" id="openPositions">0</div>
+                    <div class="card-sub" id="unrealizedPnl">Unrealized: $0.00</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Win Rate</div>
+                    <div class="card-value" id="winRate">--%</div>
+                    <div class="card-sub" id="totalTrades">0 total trades</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Max Drawdown</div>
+                    <div class="card-value" id="maxDrawdown">--%</div>
+                    <div class="card-sub">From peak equity</div>
+                </div>
+            </div>
+
+            <!-- Equity Curve -->
+            <div class="card" style="margin-bottom:20px;">
+                <div class="card-header">
+                    <div class="card-title">Equity Curve</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- P&L + Events -->
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-title" style="margin-bottom:12px;">Monthly P&L</div>
+                    <div class="chart-container" style="height:250px;">
+                        <canvas id="monthlyChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title" style="margin-bottom:12px;">Recent Events</div>
+                    <div id="riskEvents" style="max-height:250px;overflow-y:auto;">
+                        <div style="color:var(--muted);text-align:center;padding:40px;">No events yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!-- ── TAB: Positions ─────────────────────────────────────────── -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-positions">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Open Positions</div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Trade ID</th>
+                            <th>Strikes</th>
+                            <th>Exp</th>
+                            <th>DTE</th>
+                            <th>Credit</th>
+                            <th>Unrealized</th>
+                            <th>Max Risk</th>
+                            <th>Entry</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positionsTable">
+                        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px;">No open positions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!-- ── TAB: History ───────────────────────────────────────────── -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-history">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Trade History</div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Trade ID</th>
+                            <th>Status</th>
+                            <th>Strikes</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>Credit</th>
+                            <th>P&L</th>
+                            <th>Exit Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTable">
+                        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px;">No trades yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!-- ── TAB: Backtest ──────────────────────────────────────────── -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-backtest">
+            <div class="card" style="margin-bottom:20px;">
+                <div class="card-title" style="margin-bottom:16px;">Run Backtest</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" id="btStart" value="2023-01-01">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" id="btEnd" value="2025-01-01">
+                    </div>
+                    <div class="form-group">
+                        <label>Initial Capital ($)</label>
+                        <input type="number" id="btCapital" value="50000">
+                    </div>
+                    <button class="btn btn-primary" id="runBacktest" onclick="runBacktest()">
+                        🧪 Run Backtest
+                    </button>
+                </div>
+            </div>
+
+            <div id="btResults" style="display:none;">
+                <div class="stats-grid" id="btStats"></div>
+                
+                <div class="card" style="margin-bottom:20px;">
+                    <div class="card-title" style="margin-bottom:12px;">Backtest Equity Curve</div>
+                    <div class="chart-container">
+                        <canvas id="btEquityChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="grid grid-2" style="margin-bottom:20px;">
+                    <div class="card">
+                        <div class="card-title" style="margin-bottom:12px;">Monthly Returns</div>
+                        <div class="chart-container" style="height:250px;">
+                            <canvas id="btMonthlyChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title" style="margin-bottom:12px;">Trade Distribution</div>
+                        <div class="chart-container" style="height:250px;">
+                            <canvas id="btDistChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-title" style="margin-bottom:12px;">Backtest Trades</div>
+                    <div style="max-height:400px;overflow-y:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th><th>Entry</th><th>Exit</th><th>Strikes</th>
+                                    <th>Credit</th><th>P&L</th><th>P&L %</th><th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody id="btTradesTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!-- ── TAB: Settings ──────────────────────────────────────────── -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-settings">
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-title" style="margin-bottom:16px;">Strategy Parameters</div>
+                    <div id="strategyParams"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title" style="margin-bottom:16px;">Risk Parameters</div>
+                    <div id="riskParams"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- ── JavaScript ─────────────────────────────────────────────────── -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <script>
+        let equityChart, monthlyChart, btEquityChart, btMonthlyChart, btDistChart;
+        
+        // ── Tab Switching ────────────────────────────────
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+        }
+        
+        // ── Formatting Helpers ───────────────────────────
+        const fmt = (n, dec=2) => `$${Number(n).toFixed(dec)}`;
+        const fmtPnl = (n) => {
+            const v = Number(n);
+            const cls = v >= 0 ? 'positive' : 'negative';
+            return `<span class="${cls}">${v >= 0 ? '+' : ''}$${v.toFixed(2)}</span>`;
+        };
+        
+        // ── Chart Defaults ───────────────────────────────
+        Chart.defaults.color = '#8890a8';
+        Chart.defaults.borderColor = '#2e3348';
+        Chart.defaults.font.family = "'SF Mono', 'Fira Code', monospace";
+        Chart.defaults.font.size = 11;
+        
+        // ── Fetch & Update Dashboard ─────────────────────
+        async function updateDashboard() {
+            try {
+                // Status
+                const status = await (await fetch('/api/status')).json();
+                const isRunning = status.status === 'running';
+                document.getElementById('statusBadge').className = `status-badge ${isRunning ? 'status-running' : 'status-stopped'}`;
+                document.getElementById('statusDot').className = `dot ${isRunning ? 'dot-green' : 'dot-red'}`;
+                document.getElementById('statusText').textContent = isRunning ? 'RUNNING' : 'STOPPED';
+                
+                if (status.environment === 'paper') {
+                    document.getElementById('envBadge').className = 'status-badge status-paper';
+                    document.getElementById('envText').textContent = 'PAPER';
+                }
+                
+                document.getElementById('todayPnl').innerHTML = fmtPnl(status.today?.realized_pnl || 0);
+                document.getElementById('todayTrades').textContent = `${status.today?.trades_opened || 0} opened, ${status.today?.trades_closed || 0} closed`;
+                document.getElementById('openPositions').textContent = status.open_positions || 0;
+                document.getElementById('unrealizedPnl').innerHTML = `Unrealized: ${fmtPnl(status.total_unrealized || 0)}`;
+                
+                // Trades for win rate calc
+                const tradesResp = await (await fetch('/api/trades?limit=100')).json();
+                const trades = tradesResp.trades || [];
+                const closed = trades.filter(t => t.status === 'closed');
+                const wins = closed.filter(t => t.realized_pnl > 0);
+                const winRate = closed.length > 0 ? (wins.length / closed.length * 100).toFixed(1) : '--';
+                document.getElementById('winRate').textContent = `${winRate}%`;
+                document.getElementById('totalTrades').textContent = `${closed.length} closed trades`;
+                
+                // Positions
+                const posResp = await (await fetch('/api/positions')).json();
+                updatePositionsTable(posResp.positions || []);
+                
+                // History
+                updateHistoryTable(trades);
+                
+                // P&L
+                const pnlResp = await (await fetch('/api/pnl?days=90')).json();
+                updateEquityChart(pnlResp.daily_pnl || []);
+                updateMonthlyChart(pnlResp.daily_pnl || []);
+                
+                // Events
+                const evtResp = await (await fetch('/api/risk-events')).json();
+                updateEvents(evtResp.events || []);
+                
+                // Config
+                const cfgResp = await (await fetch('/api/config')).json();
+                updateConfigDisplay(cfgResp);
+                
+            } catch (e) {
+                console.error('Dashboard update error:', e);
+            }
+        }
+        
+        function updatePositionsTable(positions) {
+            const tbody = document.getElementById('positionsTable');
+            if (!positions.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px;">No open positions</td></tr>';
+                return;
+            }
+            tbody.innerHTML = positions.map(p => {
+                const exp = p.expiration || '';
+                const dte = exp ? Math.max(0, Math.floor((new Date(exp.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) - new Date()) / 86400000)) : '-';
+                return `<tr>
+                    <td><code>${p.trade_id}</code></td>
+                    <td>${p.short_put}P/${p.long_put}P · ${p.short_call}C/${p.long_call}C</td>
+                    <td>${exp}</td>
+                    <td>${dte}</td>
+                    <td>${fmt(p.entry_credit)}</td>
+                    <td>${fmtPnl(p.unrealized_pnl || 0)}</td>
+                    <td>${fmt(p.max_risk)}</td>
+                    <td>${(p.entry_time || '').slice(0, 16)}</td>
+                </tr>`;
+            }).join('');
+        }
+        
+        function updateHistoryTable(trades) {
+            const tbody = document.getElementById('historyTable');
+            if (!trades.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px;">No trades yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = trades.map(t => `<tr>
+                <td><code>${t.trade_id}</code></td>
+                <td><span class="badge ${t.status === 'open' ? 'badge-open' : 'badge-closed'}">${t.status}</span></td>
+                <td>${t.short_put}P/${t.long_put}P · ${t.short_call}C/${t.long_call}C</td>
+                <td>${(t.entry_time || '').slice(0, 10)}</td>
+                <td>${(t.exit_time || '-').slice(0, 10)}</td>
+                <td>${fmt(t.entry_credit)}</td>
+                <td>${t.status === 'closed' ? fmtPnl(t.realized_pnl) : fmtPnl(t.unrealized_pnl || 0)}</td>
+                <td>${t.exit_reason || '-'}</td>
+            </tr>`).join('');
+        }
+        
+        function updateEquityChart(data) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            const reversed = [...data].reverse();
+            
+            if (equityChart) equityChart.destroy();
+            equityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: reversed.map(d => d.date),
+                    datasets: [{
+                        label: 'Portfolio Value',
+                        data: reversed.map(d => d.portfolio_value),
+                        borderColor: '#448aff',
+                        backgroundColor: 'rgba(68,138,255,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: true, grid: { display: false } },
+                        y: { display: true, grid: { color: '#2e3348' } }
+                    }
+                }
+            });
+        }
+        
+        function updateMonthlyChart(data) {
+            const ctx = document.getElementById('monthlyChart').getContext('2d');
+            
+            // Aggregate by month
+            const monthly = {};
+            data.forEach(d => {
+                const m = d.date.slice(0, 7);
+                monthly[m] = (monthly[m] || 0) + (d.total_pnl || 0);
+            });
+            
+            const months = Object.keys(monthly).sort();
+            const values = months.map(m => monthly[m]);
+            
+            if (monthlyChart) monthlyChart.destroy();
+            monthlyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: values.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,82,82,0.6)'),
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { grid: { color: '#2e3348' } }
+                    }
+                }
+            });
+        }
+        
+        function updateEvents(events) {
+            const container = document.getElementById('riskEvents');
+            if (!events.length) {
+                container.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">No events yet</div>';
+                return;
+            }
+            container.innerHTML = events.slice(0, 15).map(e => `
+                <div class="event-item">
+                    <div class="event-dot event-${e.severity}"></div>
+                    <div>
+                        <div class="event-msg">${e.message}</div>
+                        <div class="event-time">${e.event_type} · ${(e.created_at || '').slice(0, 19)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function updateConfigDisplay(cfg) {
+            const stratDiv = document.getElementById('strategyParams');
+            const riskDiv = document.getElementById('riskParams');
+            
+            const paramRow = (label, value) => `
+                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+                    <span style="color:var(--muted)">${label}</span>
+                    <span style="font-weight:600">${value}</span>
+                </div>`;
+            
+            if (cfg.strategy) {
+                const s = cfg.strategy;
+                stratDiv.innerHTML = [
+                    paramRow('Symbol', s.symbol),
+                    paramRow('Short Put Delta', s.short_put_delta),
+                    paramRow('Short Call Delta', s.short_call_delta),
+                    paramRow('Wing Width', `$${s.wing_width}`),
+                    paramRow('DTE Range', `${s.target_dte_min}-${s.target_dte_max}`),
+                    paramRow('Min Credit', `$${s.min_credit}`),
+                    paramRow('Profit Target', `${s.profit_target_pct}%`),
+                    paramRow('Stop Loss', `${s.stop_loss_pct}%`),
+                    paramRow('DTE Exit', `${s.dte_exit} days`),
+                    paramRow('Max Positions', s.max_positions),
+                    paramRow('Contracts/Trade', s.contracts_per_trade),
+                ].join('');
+            }
+            
+            if (cfg.risk) {
+                const r = cfg.risk;
+                riskDiv.innerHTML = [
+                    paramRow('Max Daily Loss', `$${r.max_daily_loss}`),
+                    paramRow('Max Daily Trades', r.max_daily_trades),
+                    paramRow('Max Drawdown', `${r.max_drawdown_pct}%`),
+                    paramRow('Consecutive Loss Limit', r.consecutive_loss_limit),
+                    paramRow('VIX Max Entry', r.vix_max_entry),
+                ].join('');
+            }
+        }
+        
+        // ── Backtest ─────────────────────────────────────
+        async function runBacktest() {
+            const btn = document.getElementById('runBacktest');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Running...';
+            
+            try {
+                const resp = await fetch('/api/backtest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_date: document.getElementById('btStart').value,
+                        end_date: document.getElementById('btEnd').value,
+                        initial_capital: Number(document.getElementById('btCapital').value),
+                    })
+                });
+                
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                
+                displayBacktestResults(data);
+                document.getElementById('btResults').style.display = 'block';
+            } catch (e) {
+                alert('Backtest error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🧪 Run Backtest';
+            }
+        }
+        
+        function displayBacktestResults(data) {
+            // Stats grid
+            const statsDiv = document.getElementById('btStats');
+            const stat = (label, value, cls='') => `
+                <div class="stat-item">
+                    <div class="stat-label">${label}</div>
+                    <div class="stat-value ${cls}">${value}</div>
+                </div>`;
+            
+            statsDiv.innerHTML = [
+                stat('Total Trades', data.total_trades),
+                stat('Win Rate', `${data.win_rate?.toFixed(1)}%`, data.win_rate >= 50 ? 'positive' : 'negative'),
+                stat('Total P&L', `$${data.total_pnl?.toFixed(2)}`, data.total_pnl >= 0 ? 'positive' : 'negative'),
+                stat('Total Return', `${data.total_return_pct?.toFixed(2)}%`, data.total_return_pct >= 0 ? 'positive' : 'negative'),
+                stat('Annual Return', `${data.annualized_return_pct?.toFixed(2)}%`),
+                stat('Max Drawdown', `${data.max_drawdown_pct?.toFixed(2)}%`, 'negative'),
+                stat('Sharpe Ratio', data.sharpe_ratio?.toFixed(2)),
+                stat('Profit Factor', data.profit_factor?.toFixed(2)),
+            ].join('');
+            
+            // Equity chart
+            const eq = data.equity_curve || [];
+            const ctx1 = document.getElementById('btEquityChart').getContext('2d');
+            if (btEquityChart) btEquityChart.destroy();
+            btEquityChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: eq.map(d => d.date),
+                    datasets: [{
+                        label: 'Equity',
+                        data: eq.map(d => d.equity),
+                        borderColor: '#448aff',
+                        backgroundColor: 'rgba(68,138,255,0.08)',
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: true, grid: { display: false }, ticks: { maxTicksLimit: 12 } },
+                        y: { grid: { color: '#2e3348' } }
+                    }
+                }
+            });
+            
+            // Monthly returns
+            const mr = data.monthly_returns || [];
+            const ctx2 = document.getElementById('btMonthlyChart').getContext('2d');
+            if (btMonthlyChart) btMonthlyChart.destroy();
+            btMonthlyChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: mr.map(d => d.month),
+                    datasets: [{
+                        data: mr.map(d => d.pnl),
+                        backgroundColor: mr.map(d => d.pnl >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,82,82,0.6)'),
+                        borderRadius: 3,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { grid: { display: false } }, y: { grid: { color: '#2e3348' } } }
+                }
+            });
+            
+            // P&L distribution
+            const pnls = (data.trades || []).map(t => t.pnl);
+            const bins = {};
+            const step = 50;
+            pnls.forEach(p => {
+                const bin = Math.floor(p / step) * step;
+                bins[bin] = (bins[bin] || 0) + 1;
+            });
+            const sortedBins = Object.keys(bins).map(Number).sort((a,b) => a - b);
+            
+            const ctx3 = document.getElementById('btDistChart').getContext('2d');
+            if (btDistChart) btDistChart.destroy();
+            btDistChart = new Chart(ctx3, {
+                type: 'bar',
+                data: {
+                    labels: sortedBins.map(b => `$${b}`),
+                    datasets: [{
+                        data: sortedBins.map(b => bins[b]),
+                        backgroundColor: sortedBins.map(b => b >= 0 ? 'rgba(0,230,118,0.5)' : 'rgba(255,82,82,0.5)'),
+                        borderRadius: 3,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { grid: { display: false } }, y: { grid: { color: '#2e3348' } } }
+                }
+            });
+            
+            // Trades table
+            const tbody = document.getElementById('btTradesTable');
+            tbody.innerHTML = (data.trades || []).map(t => `<tr>
+                <td><code>${t.trade_id}</code></td>
+                <td>${t.entry_date}</td>
+                <td>${t.exit_date}</td>
+                <td>${t.short_put}P/${t.long_put}P · ${t.short_call}C/${t.long_call}C</td>
+                <td>${fmt(t.entry_credit)}</td>
+                <td>${fmtPnl(t.pnl)}</td>
+                <td><span class="${t.pnl >= 0 ? 'positive' : 'negative'}">${t.pnl_pct?.toFixed(1)}%</span></td>
+                <td>${t.exit_reason}</td>
+            </tr>`).join('');
+        }
+        
+        // ── Init ─────────────────────────────────────────
+        updateDashboard();
+        setInterval(updateDashboard, 30000);
+    </script>
+</body>
+</html>
