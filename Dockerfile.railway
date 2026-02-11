@@ -1,0 +1,65 @@
+# ══════════════════════════════════════════════════════════════════
+# IBKR Iron Condor Bot — Railway.app Dockerfile
+# All-in-one: IB Gateway + Trading Bot + Dashboard
+# ══════════════════════════════════════════════════════════════════
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/New_York
+
+# ── System Dependencies ──────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv \
+    wget curl unzip supervisor cron \
+    # IB Gateway dependencies
+    openjdk-11-jre-headless \
+    xvfb x11vnc socat \
+    libxtst6 libxrender1 libxi6 libfontconfig1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Install IB Gateway ──────────────────────────────────────────
+# Download stable IB Gateway (headless)
+RUN mkdir -p /opt/ibgateway && \
+    wget -q "https://download2.interactivebrokers.com/installers/ibgateway/stable-standalone/ibgateway-stable-standalone-linux-x64.sh" \
+    -O /tmp/ibgateway-install.sh && \
+    chmod +x /tmp/ibgateway-install.sh && \
+    yes "" | /tmp/ibgateway-install.sh -q -dir /opt/ibgateway || true && \
+    rm -f /tmp/ibgateway-install.sh
+
+# ── IB Gateway auto-config ──────────────────────────────────────
+RUN mkdir -p /opt/ibgateway/jts
+COPY deploy/ibgateway-config.ini /opt/ibgateway/jts/jts.ini
+COPY deploy/start-ibgateway.sh /opt/ibgateway/start.sh
+RUN chmod +x /opt/ibgateway/start.sh
+
+# ── Python Dependencies ─────────────────────────────────────────
+WORKDIR /app
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# ── Application Code ─────────────────────────────────────────────
+COPY . .
+RUN mkdir -p /app/data /app/logs
+
+# ── Supervisor Config ────────────────────────────────────────────
+COPY deploy/supervisord-railway.conf /etc/supervisor/conf.d/railway.conf
+
+# ── Environment Defaults ─────────────────────────────────────────
+ENV BOT_ENV=paper \
+    IB_HOST=127.0.0.1 \
+    IB_PORT=4002 \
+    IB_CLIENT_ID=1 \
+    IB_USERNAME="" \
+    IB_PASSWORD="" \
+    TRADING_MODE=paper \
+    DASHBOARD_SECRET=change-me \
+    DB_PATH=/app/data/trades.db \
+    PYTHONUNBUFFERED=1 \
+    DISPLAY=:99
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
+    CMD curl -sf http://localhost:${PORT:-5000}/api/status || exit 1
+
+CMD ["supervisord", "-n", "-c", "/etc/supervisor/conf.d/railway.conf"]
