@@ -1,65 +1,77 @@
 # ══════════════════════════════════════════════════════════════════
-# IBKR Iron Condor Bot — Railway.app Dockerfile
-# All-in-one: IB Gateway + Trading Bot + Dashboard
+# IBKR Iron Condor Bot — Railway.app
+# Self-contained: no external config files needed
 # ══════════════════════════════════════════════════════════════════
-FROM ubuntu:22.04
+FROM python:3.11-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=America/New_York
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=America/New_York
 
 # ── System Dependencies ──────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv \
-    wget curl unzip supervisor cron \
-    # IB Gateway dependencies
-    openjdk-11-jre-headless \
-    xvfb x11vnc socat \
-    libxtst6 libxrender1 libxi6 libfontconfig1 \
+    curl supervisor \
     && rm -rf /var/lib/apt/lists/*
-
-# ── Install IB Gateway ──────────────────────────────────────────
-# Download stable IB Gateway (headless)
-RUN mkdir -p /opt/ibgateway && \
-    wget -q "https://download2.interactivebrokers.com/installers/ibgateway/stable-standalone/ibgateway-stable-standalone-linux-x64.sh" \
-    -O /tmp/ibgateway-install.sh && \
-    chmod +x /tmp/ibgateway-install.sh && \
-    yes "" | /tmp/ibgateway-install.sh -q -dir /opt/ibgateway || true && \
-    rm -f /tmp/ibgateway-install.sh
-
-# ── IB Gateway auto-config ──────────────────────────────────────
-RUN mkdir -p /opt/ibgateway/jts
-COPY deploy/ibgateway-config.ini /opt/ibgateway/jts/jts.ini
-COPY deploy/start-ibgateway.sh /opt/ibgateway/start.sh
-RUN chmod +x /opt/ibgateway/start.sh
 
 # ── Python Dependencies ─────────────────────────────────────────
 WORKDIR /app
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Application Code ─────────────────────────────────────────────
 COPY . .
 RUN mkdir -p /app/data /app/logs
 
-# ── Supervisor Config ────────────────────────────────────────────
-COPY deploy/supervisord-railway.conf /etc/supervisor/conf.d/railway.conf
+# ── Create startup script ───────────────────────────────────────
+RUN echo '#!/bin/bash\n\
+PORT=${PORT:-5000}\n\
+echo "Starting dashboard on port $PORT"\n\
+gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 "dashboard.app:create_app()"' \
+    > /app/start_dashboard.sh && chmod +x /app/start_dashboard.sh
+
+# ── Supervisor config (inline) ──────────────────────────────────
+RUN echo "[supervisord]"                              >  /etc/supervisor/conf.d/app.conf && \
+    echo "nodaemon=true"                              >> /etc/supervisor/conf.d/app.conf && \
+    echo "logfile=/app/logs/supervisord.log"           >> /etc/supervisor/conf.d/app.conf && \
+    echo "pidfile=/tmp/supervisord.pid"                >> /etc/supervisor/conf.d/app.conf && \
+    echo ""                                            >> /etc/supervisor/conf.d/app.conf && \
+    echo "[program:dashboard]"                         >> /etc/supervisor/conf.d/app.conf && \
+    echo "command=/app/start_dashboard.sh"             >> /etc/supervisor/conf.d/app.conf && \
+    echo "directory=/app"                              >> /etc/supervisor/conf.d/app.conf && \
+    echo "autostart=true"                              >> /etc/supervisor/conf.d/app.conf && \
+    echo "autorestart=true"                            >> /etc/supervisor/conf.d/app.conf && \
+    echo "stdout_logfile=/dev/stdout"                  >> /etc/supervisor/conf.d/app.conf && \
+    echo "stdout_logfile_maxbytes=0"                   >> /etc/supervisor/conf.d/app.conf && \
+    echo "stderr_logfile=/dev/stderr"                  >> /etc/supervisor/conf.d/app.conf && \
+    echo "stderr_logfile_maxbytes=0"                   >> /etc/supervisor/conf.d/app.conf && \
+    echo 'environment=PYTHONPATH="/app"'               >> /etc/supervisor/conf.d/app.conf && \
+    echo "priority=10"                                 >> /etc/supervisor/conf.d/app.conf && \
+    echo ""                                            >> /etc/supervisor/conf.d/app.conf && \
+    echo "[program:trading_bot]"                       >> /etc/supervisor/conf.d/app.conf && \
+    echo "command=python3 main.py --dashboard"         >> /etc/supervisor/conf.d/app.conf && \
+    echo "directory=/app"                              >> /etc/supervisor/conf.d/app.conf && \
+    echo "autostart=true"                              >> /etc/supervisor/conf.d/app.conf && \
+    echo "autorestart=true"                            >> /etc/supervisor/conf.d/app.conf && \
+    echo "stdout_logfile=/dev/stdout"                  >> /etc/supervisor/conf.d/app.conf && \
+    echo "stdout_logfile_maxbytes=0"                   >> /etc/supervisor/conf.d/app.conf && \
+    echo "stderr_logfile=/dev/stderr"                  >> /etc/supervisor/conf.d/app.conf && \
+    echo "stderr_logfile_maxbytes=0"                   >> /etc/supervisor/conf.d/app.conf && \
+    echo 'environment=PYTHONPATH="/app"'               >> /etc/supervisor/conf.d/app.conf && \
+    echo "startretries=10"                             >> /etc/supervisor/conf.d/app.conf && \
+    echo "startsecs=5"                                 >> /etc/supervisor/conf.d/app.conf && \
+    echo "priority=20"                                 >> /etc/supervisor/conf.d/app.conf
 
 # ── Environment Defaults ─────────────────────────────────────────
 ENV BOT_ENV=paper \
     IB_HOST=127.0.0.1 \
     IB_PORT=4002 \
     IB_CLIENT_ID=1 \
-    IB_USERNAME="" \
-    IB_PASSWORD="" \
-    TRADING_MODE=paper \
     DASHBOARD_SECRET=change-me \
     DB_PATH=/app/data/trades.db \
-    PYTHONUNBUFFERED=1 \
-    DISPLAY=:99
+    PYTHONUNBUFFERED=1
 
 EXPOSE 5000
 
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
     CMD curl -sf http://localhost:${PORT:-5000}/api/status || exit 1
 
-CMD ["supervisord", "-n", "-c", "/etc/supervisor/conf.d/railway.conf"]
+CMD ["supervisord", "-n", "-c", "/etc/supervisor/conf.d/app.conf"]
